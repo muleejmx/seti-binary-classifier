@@ -73,17 +73,17 @@ print("length of negative data: " + str(len(negative_data)) + " and individ: " +
 TRAIN_80_POS = int(len(positive_data) * 0.8)
 TRAIN_80_NEG = int(len(negative_data) * 0.8)
 
-onehot_encoder = OneHotEncoder(sparse=False)
+# onehot_encoder = OneHotEncoder(sparse=False)
 
 train_positive_data = positive_data[:TRAIN_80_POS]
 train_negative_data = negative_data[:TRAIN_80_NEG]
 train_label = np.asarray([1] * TRAIN_80_POS + [0] * TRAIN_80_NEG) # 1 is interesting; 0 is not interesting
-train_label = onehot_encoder.fit_transform(train_label.reshape(len(train_label), 1))
+# train_label = onehot_encoder.fit_transform(train_label.reshape(len(train_label), 1))
 
 eval_positive_data = positive_data[TRAIN_80_POS:]
 eval_negative_data = negative_data[TRAIN_80_NEG:]
 eval_label = np.asarray([1] * (len(eval_positive_data)) + [0] * (len(eval_negative_data))) # 1 is interesting; 0 is not interesting
-eval_label = onehot_encoder.fit_transform(eval_label.reshape(len(eval_label), 1))
+# eval_label = onehot_encoder.fit_transform(eval_label.reshape(len(eval_label), 1))
 
 print("length of training labels: " + str(len(train_label)))
 print("length of evaluation labels: " + str(len(eval_label)))
@@ -148,7 +148,7 @@ def cnn_binary_classifier(features, labels, mode):
 		return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
 
   # Calculate Loss (for both TRAIN and EVAL modes)
-	onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=10)
+	onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=2)
 	loss = tf.losses.softmax_cross_entropy(
 		onehot_labels=onehot_labels, logits=logits)
 
@@ -175,13 +175,13 @@ def cnn_binary_classifier(features, labels, mode):
 def main(unused_argv):
 	# Load training and eval data
 	train_data = np.asarray(train_positive_data + train_negative_data, dtype=np.int32) # Returns np.array
-	train_data = tf.cast(train_data.reshape(TRAIN_80_POS + TRAIN_80_NEG, 24576), tf.float32)
+	train_data = tf.cast(train_data.reshape(TRAIN_80_POS + TRAIN_80_NEG, 16, 512, 3), tf.float32)
 	train_labels = np.asarray(train_label, dtype=np.int32)
 	eval_data = np.asarray(eval_positive_data + eval_negative_data, dtype=np.int32) # Returns np.array
-	eval_data = tf.cast(eval_data.reshape(8500 - TRAIN_80_POS - TRAIN_80_NEG, 24576), tf.float32)
+	eval_data = tf.cast(eval_data.reshape(18500 - TRAIN_80_POS - TRAIN_80_NEG, 16, 512, 3), tf.float32)
 	eval_labels = np.asarray(eval_label, dtype=np.int32)
 
-	binary_classifier = tf.estimator.Estimator(
+	rfi_classifier = tf.estimator.Estimator(
 		model_fn=cnn_binary_classifier,
 		model_dir="/tmp/mnist_convnet_model")
 
@@ -197,9 +197,9 @@ def main(unused_argv):
 		num_epochs=None,
 		shuffle=True)
 
-	binary_classifier.train(
+	rfi_classifier.train(
 		input_fn=train_input_fn,
-		steps=20000)
+		steps=20000,
 		hooks=[logging_hook])
 
 	eval_input_fn = tf.estimator.inputs.numpy_input_fn(
