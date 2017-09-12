@@ -29,6 +29,8 @@ pairs = []
 pair_dict = {} # ON : OFF
 label_dict = {} # name : label
 
+sess=tf.InteractiveSession
+
 
 with open('pairs.pkl', 'rb') as f:
 	pair_dict = pickle.load(f)
@@ -108,7 +110,7 @@ def cnn_binary_classifier(features, labels, mode):
 		strides=2)
 
 	# Convolutional Layer #2
-	conv1 = tf.layers.conv2d(
+	conv2 = tf.layers.conv2d(
 		inputs=pool1, # 8 * 256 * 16
 		filters=64,
 		kernel_size=[5,5],
@@ -128,14 +130,22 @@ def cnn_binary_classifier(features, labels, mode):
 		units=1024,
 		activation=tf.nn.relu)
 	dropout = tf.layers.dropout(
-		input=dense,
+		inputs=dense,
 		rate=0.4,
 		training=mode == tf.estimator.ModeKeys.TRAIN)
 
+	sess = tf.InteractiveSession()
+
 	# Logits Layer
 	logits = tf.layers.dense(
-		inputs=dropout,
+		inputs=dropout, # [batchsize, 1024]
 		units=2) # Either same or not
+
+	
+	# Add print operation
+	logits = tf.Print(logits, [logits], message="This is a: ")
+
+
 
 	predictions = {
 	  # Generate predictions (for PREDICT and EVAL mode)
@@ -144,8 +154,11 @@ def cnn_binary_classifier(features, labels, mode):
 	  # `logging_hook`.
 	  "probabilities": tf.nn.softmax(logits, name="softmax_tensor")
 	}
+
+
 	if mode == tf.estimator.ModeKeys.PREDICT:
 		return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
+
 
   # Calculate Loss (for both TRAIN and EVAL modes)
 	onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=2)
@@ -154,7 +167,7 @@ def cnn_binary_classifier(features, labels, mode):
 
 	# Configure the Training Op (for TRAIN mode)
 	if mode == tf.estimator.ModeKeys.TRAIN:
-		optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+		optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
 		train_op = optimizer.minimize(
 			loss=loss,
 			global_step=tf.train.get_global_step())
@@ -171,19 +184,20 @@ def cnn_binary_classifier(features, labels, mode):
 		loss=loss,
 		eval_metric_ops=eval_metric_ops)
 
-
 def main(unused_argv):
 	# Load training and eval data
-	train_data = np.asarray(train_positive_data + train_negative_data, dtype=np.int32) # Returns np.array
-	train_data = tf.cast(train_data.reshape(TRAIN_80_POS + TRAIN_80_NEG, 16, 512, 3), tf.float32)
+
+	train_data = np.asarray(train_positive_data + train_negative_data, dtype=np.float32) # Returns np.array
+	train_data = np.asarray(train_data.reshape(TRAIN_80_POS + TRAIN_80_NEG, 16*512*3))
 	train_labels = np.asarray(train_label, dtype=np.int32)
+
 	eval_data = np.asarray(eval_positive_data + eval_negative_data, dtype=np.int32) # Returns np.array
-	eval_data = tf.cast(eval_data.reshape(18500 - TRAIN_80_POS - TRAIN_80_NEG, 16, 512, 3), tf.float32)
+	eval_data = tf.cast(eval_data.reshape(8500 - TRAIN_80_POS - TRAIN_80_NEG, 16*512*3), tf.float32)
 	eval_labels = np.asarray(eval_label, dtype=np.int32)
 
 	rfi_classifier = tf.estimator.Estimator(
 		model_fn=cnn_binary_classifier,
-		model_dir="/tmp/mnist_convnet_model")
+		model_dir="/tmp/model5")
 
 	tensors_to_log = {"probabilities": "softmax_tensor"}
 	logging_hook = tf.train.LoggingTensorHook(
@@ -209,7 +223,8 @@ def main(unused_argv):
 		shuffle=False)
 	eval_results = binary_classifier.evaluate(input_fn=eval_input_fn)
 
-	print(eval_results)
+
+	# print(eval_results)
 
 if __name__ == "__main__":
   tf.app.run()
