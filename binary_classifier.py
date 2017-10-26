@@ -54,20 +54,29 @@ def training_data():
       on_data = fitsio.read(data_loc + str(on) + ext)
       off_data = fitsio.read(data_loc + str(off) + ext)
 
-      on_sorted = np.sort(on_data)[int(0.25*len(on_data)):int(0.75*len(on_data))]
-      off_sorted = np.sort(off_data)[int(0.25*len(off_data)):int(0.75*len(off_data))]
+      on_min = min(on_data.flatten())
+      on_max = max(on_data.flatten())
 
-      on_avg = np.mean(on_sorted)
-      off_avg = np.mean(off_sorted)
+      off_min = min(off_data.flatten())
+      off_max = max(off_data.flatten())
 
-      on_std = np.std(on_sorted)
-      off_std = np.std(off_sorted)
+      on_data = np.round((on_data - on_min)*(255/(on_max-on_min)))
 
-      on_data[on_data < (on_avg + 10*on_std)] = 0
-      on_data[on_data > (on_avg + 10*on_std)] = 1
+      off_data = np.round((off_data - off_min)* (255/(off_max-off_min)))
+      # on_sorted = np.sort(on_data)[int(0.25*len(on_data)):int(0.75*len(on_data))]
+      # off_sorted = np.sort(off_data)[int(0.25*len(off_data)):int(0.75*len(off_data))]
 
-      off_data[off_data < (off_avg + 10*off_std)] = 0
-      off_data[off_data > (off_avg + 10*off_std)] = 1
+      # on_avg = np.mean(on_sorted)
+      # off_avg = np.mean(off_sorted)
+
+      # on_std = np.std(on_sorted)
+      # off_std = np.std(off_sorted)
+
+      # on_data[on_data < (on_avg + 10*on_std)] = 0
+      # on_data[on_data > (on_avg + 10*on_std)] = 1
+
+      # off_data[off_data < (off_avg + 10*off_std)] = 0
+      # off_data[off_data > (off_avg + 10*off_std)] = 1
 
       on_flip_ud = np.flipud(on_data)
       on_flip_lr = np.fliplr(on_data)
@@ -86,21 +95,21 @@ def training_data():
       stack(np.roll(on_data, roll_val[0]), np.roll(off_data, roll_val[0]), typ)
       stack(np.roll(on_data, roll_val[1]), np.roll(off_data, roll_val[1]), typ)
       stack(np.roll(on_data, roll_val[2]), np.roll(off_data, roll_val[2]), typ)
-      stack(np.roll(on_data, roll_val[3]), np.roll(off_data, roll_val[3]), typ)
+      #stack(np.roll(on_data, roll_val[3]), np.roll(off_data, roll_val[3]), typ)
       #stack(np.roll(on_data, roll_val[4]), np.roll(off_data, roll_val[4]), typ)
 
       stack(on_flip_ud, off_flip_ud, typ) # 2
       stack(np.roll(on_flip_ud, roll_val[5]), np.roll(off_flip_ud, roll_val[5]), typ)
       stack(np.roll(on_flip_ud, roll_val[6]), np.roll(off_flip_ud, roll_val[6]), typ)
       stack(np.roll(on_flip_ud, roll_val[7]), np.roll(off_flip_ud, roll_val[7]), typ)
-      stack(np.roll(on_flip_ud, roll_val[8]), np.roll(off_flip_ud, roll_val[8]), typ)
+      #stack(np.roll(on_flip_ud, roll_val[8]), np.roll(off_flip_ud, roll_val[8]), typ)
       #stack(np.roll(on_flip_ud, roll_val[9]), np.roll(off_flip_ud, roll_val[9]), typ)
 
       stack(on_flip_lr, off_flip_lr, typ) # 3
       stack(np.roll(on_flip_lr, roll_val[10]), np.roll(off_flip_lr, roll_val[10]), typ)
       stack(np.roll(on_flip_lr, roll_val[11]), np.roll(off_flip_lr, roll_val[11]), typ)
       stack(np.roll(on_flip_lr, roll_val[12]), np.roll(off_flip_lr, roll_val[12]), typ)
-      stack(np.roll(on_flip_lr, roll_val[13]), np.roll(off_flip_lr, roll_val[13]), typ)
+      #stack(np.roll(on_flip_lr, roll_val[13]), np.roll(off_flip_lr, roll_val[13]), typ)
       #stack(np.roll(on_flip_lr, roll_val[14]), np.roll(off_flip_lr, roll_val[14]), typ)
 
       stack(on_db_flip, off_db_flip, typ) # 4
@@ -217,19 +226,24 @@ def cnn_model_fn(features, labels, mode):
     # Calculate Loss (for both TRAIN and EVAL modes)
     onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=2)
     with tf.name_scope('loss'):
-      loss = tf.losses.softmax_cross_entropy(
+      unregularized_loss = tf.losses.softmax_cross_entropy(
         onehot_labels=onehot_labels, logits=logits)
+      #l2_loss = tf.nn.l2_loss(conv1)+tf.nn.l2_loss(conv2)+tf.nn.l2_loss(dense)
+      #loss = tf.add(unregularized_loss, l2_loss*0.002)
+      loss = unregularized_loss
       tf.summary.scalar('loss', loss)
 
     # Configure the Training Op (for TRAIN mode)
     if mode == tf.estimator.ModeKeys.TRAIN:
       with tf.name_scope('train_op'):
         global_step = tf.Variable(0, trainable=False)
-	starter_learning_rate = 0.01
+	starter_learning_rate = 0.0001
 	k = 0.5
 	
+	#natural exp decay; 14
+	learning_rate = tf.train.natural_exp_decay(starter_learning_rate, global_step, 10000, k)
 	# inverse time decay; 13
-	learning_rate = tf.train.inverse_time_decay(starter_learning_rate, global_step, 10000, k)
+	#learning_rate = tf.train.inverse_time_decay(starter_learning_rate, global_step, 10000, k)
 	# exponential decay; 12
 	#learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step, 10000, 0.96, staircase=True)
 	optimizer = tf.train.GradientDescentOptimizer(learning_rate)
@@ -244,7 +258,26 @@ def cnn_model_fn(features, labels, mode):
     eval_metric_ops = {
       "accuracy": tf.metrics.accuracy(
           labels=labels,
-          predictions=predictions["classes"])}
+          predictions=predictions["classes"]),
+      "recall": tf.metrics.recall(
+          labels=labels,
+          predictions=predictions["classes"]),
+      "precision": tf.metrics.precision(
+          labels=labels,
+          predictions=predictions["classes"]),
+      "false_positives": tf.contrib.metrics.streaming_false_positives(
+	  labels=labels,
+	  predictions=predictions["classes"]),
+      "true_positives": tf.contrib.metrics.streaming_true_positives(
+          labels=labels,
+          predictions=predictions["classes"]),
+      "false_negatives": tf.contrib.metrics.streaming_false_negatives(
+          labels=labels,
+          predictions=predictions["classes"]),
+	"true_negatives": tf.contrib.metrics.streaming_true_negatives(
+          labels=labels,
+          predictions=predictions["classes"]),
+}
 
     return tf.estimator.EstimatorSpec(
       mode=mode,
@@ -264,7 +297,7 @@ def main(unused_argv):
     # Create the Estimator
     rfi_classifier = tf.estimator.Estimator(
     model_fn=cnn_model_fn,
-    model_dir="./tmp/13")
+    model_dir="./tmp/22")
 
     # Set up logging for predictions
     tensors_to_log = {"probabilities": "softmax_tensor"}
@@ -278,7 +311,7 @@ def main(unused_argv):
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": train_data},
         y=train_labels,
-        batch_size=32,
+        batch_size=16,
         num_epochs=None,
         shuffle=True)
 
