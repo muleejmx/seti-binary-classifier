@@ -8,6 +8,7 @@ import tensorflow as tf
 import fitsio
 import numpy
 import pickle
+import scipy.stats
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -41,6 +42,39 @@ def stack(dataON, dataOFF, typ):
 
 def training_data():
 
+  def normalizerIQR(onArr, offArr):
+    """Normalize an ON/OFF pair using median removal and IQR scaling"""
+    
+    # saturate signals above and below the IQR centred on the median
+    # use the data with the max absolute value for median and IQR for this
+    # operation, this assumes the on and off data are similarly scaled
+
+    if np.abs(onArr).max() > np.abs(offArr).max():
+      median = np.median(onArr)
+      IQR = scipy.stats.iqr(onArr)
+    else:
+      median = np.median(offArr)
+      IQR = scipy.stats.iqr(offArr)
+
+    # median subtract and normalize to range [-1,1]
+    onArrNorm = (np.clip(onArr, median - IQR/2., median + IQR/2.) - median) / (IQR/2.)
+    offArrNorm = (np.clip(offArr, median - IQR/2., median + IQR/2.) - median) / (IQR/2.)
+
+    return onArrNorm, offArrNorm
+
+  def normalizer8bit(onArr, offArr):
+    """Normalize an ON/OFF pair to 8-bits, rescale to [0,1]"""
+    on_min = onArr.min()
+    on_max = onArr.max()
+
+    off_min = offArr.min()
+    off_max = offArr.max()
+
+    onArrNorm = np.round(256. * ((onArr - on_min) / (on_max - on_min))) / 256.
+    offArrNorm = np.round(256. * ((offArr - off_min) / (off_max - off_min))) / 256.
+
+    return onArrNorm, offArrNorm
+
   for on in dataset:
     off = on + '_OFF'
 
@@ -51,18 +85,12 @@ def training_data():
 
       typ = (on_label != off_label)
 
-      on_data = fitsio.read(data_loc + str(on) + ext)
-      off_data = fitsio.read(data_loc + str(off) + ext)
+      on_data_raw = fitsio.read(data_loc + str(on) + ext)
+      off_data_raw = fitsio.read(data_loc + str(off) + ext)
 
-      on_min = min(on_data.flatten())
-      on_max = max(on_data.flatten())
+      #on_data, off_data = normalizer8bit(on_data_raw, off_data_raw)
+      on_data, off_data = normalizerIQR(on_data_raw, off_data_raw)
 
-      off_min = min(off_data.flatten())
-      off_max = max(off_data.flatten())
-
-      on_data = np.round((on_data - on_min)*(255/(on_max-on_min)))
-
-      off_data = np.round((off_data - off_min)* (255/(off_max-off_min)))
       # on_sorted = np.sort(on_data)[int(0.25*len(on_data)):int(0.75*len(on_data))]
       # off_sorted = np.sort(off_data)[int(0.25*len(off_data)):int(0.75*len(off_data))]
 
@@ -124,6 +152,7 @@ def training_data():
 
 
 training_data()
+
 print("length of positive data: " + str(len(positive_data)) + " shape: " + str(len(positive_data[0])))
 print("length of negative data: " + str(len(negative_data)) + " shape: " + str(len(negative_data[0])))
 
@@ -219,7 +248,6 @@ def cnn_model_fn(features, labels, mode):
       # `logging_hook`.
       "probabilities": tf.nn.softmax(logits, name="softmax_tensor")
     }
-    tf.Print(tf.nn.softmax(logits), [tf.reduce_min(logits)], message="recorded probabilities")
 
     if mode == tf.estimator.ModeKeys.PREDICT:
       return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
@@ -238,11 +266,11 @@ def cnn_model_fn(features, labels, mode):
     if mode == tf.estimator.ModeKeys.TRAIN:
       with tf.name_scope('train_op'):
         global_step = tf.Variable(0, trainable=False)
-	starter_learning_rate = 0.0008
+	starter_learning_rate = 0.0001
 	k = 0.5
 	
 	#natural exp decay; 14
-	learning_rate = tf.train.natural_exp_decay(starter_learning_rate, global_step, 1000, k)
+	learning_rate = tf.train.natural_exp_decay(starter_learning_rate, global_step, 10000, k)
 	# inverse time decay; 13
 	#learning_rate = tf.train.inverse_time_decay(starter_learning_rate, global_step, 10000, k)
 	# exponential decay; 12
@@ -267,15 +295,15 @@ def cnn_model_fn(features, labels, mode):
           labels=labels,
           predictions=predictions["classes"]),
       "false_positives": tf.contrib.metrics.streaming_false_positives(
-	  labels=labels,
-	  predictions=predictions["classes"]),
+	      labels=labels,
+          predictions=predictions["classes"]),
       "true_positives": tf.contrib.metrics.streaming_true_positives(
           labels=labels,
           predictions=predictions["classes"]),
       "false_negatives": tf.contrib.metrics.streaming_false_negatives(
           labels=labels,
           predictions=predictions["classes"]),
-	"true_negatives": tf.contrib.metrics.streaming_true_negatives(
+	  "true_negatives": tf.contrib.metrics.streaming_true_negatives(
           labels=labels,
           predictions=predictions["classes"]),
 }
@@ -298,7 +326,7 @@ def main(unused_argv):
     # Create the Estimator
     rfi_classifier = tf.estimator.Estimator(
     model_fn=cnn_model_fn,
-    model_dir="./tmp/29")
+    model_dir="./tmp/22")
 
     # Set up logging for predictions
     tensors_to_log = {"probabilities": "softmax_tensor"}
@@ -318,7 +346,7 @@ def main(unused_argv):
 
     rfi_classifier.train(
         input_fn=train_input_fn,
-        steps=100000,
+        steps=20000,
         hooks=[logging_hook])
 
     # Evaluate the model and print results
@@ -334,9 +362,4 @@ def main(unused_argv):
 
 if __name__ == "__main__":
     tf.app.run()
-
-
-
-
-
 

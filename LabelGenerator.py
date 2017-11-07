@@ -20,6 +20,13 @@ with open('./data/labelled_files.pkl', 'rb') as f:
 for k in label_dict.keys():
     if k[-3:] != 'OFF': # ON
         dataset.append(k)
+dict_map = {0:'narrow diagonal (1)', 1:'narrow diagonal (1+)',
+            2:'narrow horizontal',
+            3:'narrow vertical (1)', 4:'narrow vertical (even)', 5:'narrow vertical (inf)',
+            6:'wide diagonal (1)', 7:'wide diagonal (1+)',
+            8:'wide horizontal',
+            9:'wide vertical (1)', 10:'wide vertical (even)', 11:'wide vertical (inf)',
+            12:'no_sig', 13:'comb_sig', 14:'signal of interest'}
 
 print("num of pairs: " + str(len(dataset)))
 
@@ -33,14 +40,14 @@ for on in dataset:
     off_data = fitsio.read(data_loc + str(off) + ext)
 
     plt.subplot(211)
-    plt.suptitle(on)
-    plt.title(str(label_dict[on]))
+    plt.suptitle(on,fontsize='8')
+    plt.title('label= '+str(label_dict[on])+' '+dict_map[label_dict[on]],fontsize='8')
     plt.imshow(on_data)
     plt.subplot(212)
-    plt.title(str(label_dict[off]))
+    plt.title('label= '+str(label_dict[off])+' '+dict_map[label_dict[off]],fontsize='8')
     plt.imshow(off_data)
     
-    plt.subplots_adjust(bottom=0.1, right=0.8, top=0.9)
+    plt.subplots_adjust(bottom=0.05, right=0.8, top=0.9)
 
     cax = plt.axes([0.85, 0.1, 0.075, 0.8])
     plt.colorbar(cax = cax)
