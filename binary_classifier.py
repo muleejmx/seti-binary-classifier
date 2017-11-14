@@ -2,21 +2,106 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+
 # Imports
 import numpy as np
 import tensorflow as tf
 import fitsio
+import matplotlib.pyplot as plt
 import numpy
 import pickle
 import scipy.stats
+
+from StringIO import StringIO
+
+
+from tensorflow.python.training.session_run_hook import SessionRunArgs
+
+class Logger(object):
+  """Logging in tensorboard without tensorflow ops."""
+
+  def __init__(self, log_dir):
+      """Creates a summary writer logging to log_dir."""
+      self.writer = tf.summary.FileWriter(log_dir)
+
+  def log_scalar(self, tag, value, step):
+      """Log a scalar variable.
+      Parameter
+      ----------
+      tag : basestring
+          Name of the scalar
+      value
+      step : int
+          training iteration
+      """
+      summary = tf.Summary(value=[tf.Summary.Value(tag=tag,
+                                                   simple_value=value)])
+      self.writer.add_summary(summary, step)
+
+  def log_images(self, tag, images, step):
+      """Logs a list of images."""
+
+      im_summaries = []
+      for nr, img in enumerate(images):
+          # Write the image to a string
+          s = StringIO()
+          plt.imsave(s, img, format='png')
+
+          # Create an Image object
+          img_sum = tf.Summary.Image(encoded_image_string=s.getvalue(),
+                                     height=img.shape[0],
+                                     width=img.shape[1])
+          # Create a Summary value
+          im_summaries.append(tf.Summary.Value(tag='%s/%d' % (tag, nr),
+                                               image=img_sum))
+
+      # Create and write Summary
+      summary = tf.Summary(value=im_summaries)
+      self.writer.add_summary(summary, step)
+      
+
+  def log_histogram(self, tag, values, step, bins=1000):
+      """Logs the histogram of a list/vector of values."""
+      # Convert to a numpy array
+      values = np.array(values)
+      
+      # Create histogram using numpy        
+      counts, bin_edges = np.histogram(values, bins=bins)
+
+      # Fill fields of histogram proto
+      hist = tf.HistogramProto()
+      hist.min = float(np.min(values))
+      hist.max = float(np.max(values))
+      hist.num = int(np.prod(values.shape))
+      hist.sum = float(np.sum(values))
+      hist.sum_squares = float(np.sum(values**2))
+
+      # Requires equal number as bins, where the first goes from -DBL_MAX to bin_edges[1]
+      # See https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/framework/summary.proto#L30
+      # Thus, we drop the start of the first bin
+      bin_edges = bin_edges[1:]
+
+      # Add bin edges and counts
+      for edge in bin_edges:
+          hist.bucket_limit.append(edge)
+      for c in counts:
+          hist.bucket.append(c)
+
+      # Create and write Summary
+      summary = tf.Summary(value=[tf.Summary.Value(tag=tag, histo=hist)])
+      self.writer.add_summary(summary, step)
+      self.writer.flush()
+
+
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
 ext = '.fits'
 data_loc = './fits_data/'
-dataset = [] # name of on pairs
-positive_data = [] # pairs share different label
-negative_data = [] # pairs share same label
+dataset = [] # name of ON pairs
+allData = []
+
+logger = Logger('./tmp/testHist')
 
 with open('./data/labelled_files.pkl', 'rb') as f:
     label_dict = pickle.load(f) # name:label
@@ -25,20 +110,17 @@ counter = 0
 for k, v in label_dict.iteritems():
   if k[-3:] != 'OFF': # ON
     dataset.append(k)
-print("num of pairs: " + str(len(dataset)))
 
+print("num of pairs: " + str(len(dataset)))
 
 # Our application logic will be added here
 
 def stack(dataON, dataOFF, typ):
   """ Takes in data (as outputted by fitsio read)
   and npstacks it. 
-  typ = True if positive (different labels)
-  typ = False if negative (same labels) """
-  if typ:
-    positive_data.append(np.dstack((dataON, dataOFF)))
-  else:
-    negative_data.append(np.dstack((dataON, dataOFF)))
+  typ = + if same labels (based on ON)
+  typ = - if different labels """
+  allData.append([np.dstack((dataON, dataOFF)), typ])
 
 def training_data():
 
@@ -83,28 +165,28 @@ def training_data():
       on_label = label_dict[on]
       off_label = label_dict[off] 
 
-      typ = (on_label != off_label)
+      if (on_label >= 8 and on_label <= 11) or (off_label >= 8 and off_label <= 11):
+        continue
+      elif on_label == 14 or off_label == 14:
+        continue
+      else:
+        if on_label ==  12 or on_label == 13:
+          on_label -= 4
+        if off_label == 12 or off_label == 13:
+          off_label -= 4
+        on_label += 1
+        off_label += 1
+
+      if (on_label != off_label):
+        typ = -1 * on_label
+      else:
+        typ = on_label
 
       on_data_raw = fitsio.read(data_loc + str(on) + ext)
       off_data_raw = fitsio.read(data_loc + str(off) + ext)
 
       #on_data, off_data = normalizer8bit(on_data_raw, off_data_raw)
       on_data, off_data = normalizerIQR(on_data_raw, off_data_raw)
-
-      # on_sorted = np.sort(on_data)[int(0.25*len(on_data)):int(0.75*len(on_data))]
-      # off_sorted = np.sort(off_data)[int(0.25*len(off_data)):int(0.75*len(off_data))]
-
-      # on_avg = np.mean(on_sorted)
-      # off_avg = np.mean(off_sorted)
-
-      # on_std = np.std(on_sorted)
-      # off_std = np.std(off_sorted)
-
-      # on_data[on_data < (on_avg + 10*on_std)] = 0
-      # on_data[on_data > (on_avg + 10*on_std)] = 1
-
-      # off_data[off_data < (off_avg + 10*off_std)] = 0
-      # off_data[off_data > (off_avg + 10*off_std)] = 1
 
       on_flip_ud = np.flipud(on_data)
       on_flip_lr = np.fliplr(on_data)
@@ -153,24 +235,16 @@ def training_data():
 
 training_data()
 
-print("length of positive data: " + str(len(positive_data)) + " shape: " + str(len(positive_data[0])))
-print("length of negative data: " + str(len(negative_data)) + " shape: " + str(len(negative_data[0])))
+TRAIN_80 = int(len(allData) * 0.8)
 
-TRAIN_80_POS = int(len(positive_data) * 0.8)
-TRAIN_80_NEG = int(len(negative_data) * 0.8)
+np.random.shuffle(allData)
 
-np.random.shuffle(positive_data)
-np.random.shuffle(negative_data)
+trainData = allData[:TRAIN_80]
+evalData = allData[TRAIN_80:]
 
-train_positive_data = positive_data[:TRAIN_80_POS]
-train_negative_data = negative_data[:TRAIN_80_NEG]
-
-eval_positive_data = positive_data[TRAIN_80_POS:]
-eval_negative_data = negative_data[TRAIN_80_NEG:]
-
-train_label = [1] * TRAIN_80_POS + [0] * TRAIN_80_NEG
-eval_label = [1] * (len(positive_data) - TRAIN_80_POS) + [0] * (len(negative_data) - TRAIN_80_NEG)
-
+print("length of data: " + str(len(allData)))
+print("length of training data: " + str(len(trainData)))
+print("length of eval data: " + str(len(evalData)))
 
 def cnn_model_fn(features, labels, mode):
     """Model function for CNN."""
@@ -239,7 +313,7 @@ def cnn_model_fn(features, labels, mode):
       training=mode == tf.estimator.ModeKeys.TRAIN)
 
     # Logits Layer
-    logits = tf.layers.dense(inputs=dropout, units=2)
+    logits = tf.layers.dense(inputs=dropout, units=22)
 
     predictions = {
       # Generate predictions (for PREDICT and EVAL mode)
@@ -253,11 +327,10 @@ def cnn_model_fn(features, labels, mode):
       return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
     
     # Calculate Loss (for both TRAIN and EVAL modes)
-    onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=2)
+    onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=22)
     with tf.name_scope('loss'):
       unregularized_loss = tf.losses.softmax_cross_entropy(
         onehot_labels=onehot_labels, logits=logits)
-      #l2_loss = tf.nn.l2_loss(conv1)+tf.nn.l2_loss(conv2)+tf.nn.l2_loss(dense)
       #loss = tf.add(unregularized_loss, l2_loss*0.002)
       loss = unregularized_loss
       tf.summary.scalar('loss', loss)
@@ -266,15 +339,11 @@ def cnn_model_fn(features, labels, mode):
     if mode == tf.estimator.ModeKeys.TRAIN:
       with tf.name_scope('train_op'):
         global_step = tf.Variable(0, trainable=False)
+
 	starter_learning_rate = 0.0001
 	k = 0.5
 	
-	#natural exp decay; 14
 	learning_rate = tf.train.natural_exp_decay(starter_learning_rate, global_step, 10000, k)
-	# inverse time decay; 13
-	#learning_rate = tf.train.inverse_time_decay(starter_learning_rate, global_step, 10000, k)
-	# exponential decay; 12
-	#learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step, 10000, 0.96, staircase=True)
 	optimizer = tf.train.GradientDescentOptimizer(learning_rate)
 	#optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.00001)
        
@@ -293,21 +362,9 @@ def cnn_model_fn(features, labels, mode):
           predictions=predictions["classes"]),
       "precision": tf.metrics.precision(
           labels=labels,
-          predictions=predictions["classes"]),
-      "false_positives": tf.contrib.metrics.streaming_false_positives(
-	      labels=labels,
-          predictions=predictions["classes"]),
-      "true_positives": tf.contrib.metrics.streaming_true_positives(
-          labels=labels,
-          predictions=predictions["classes"]),
-      "false_negatives": tf.contrib.metrics.streaming_false_negatives(
-          labels=labels,
-          predictions=predictions["classes"]),
-	  "true_negatives": tf.contrib.metrics.streaming_true_negatives(
-          labels=labels,
-          predictions=predictions["classes"]),
-}
-
+          predictions=predictions["classes"])
+    }   
+    
     return tf.estimator.EstimatorSpec(
       mode=mode,
       loss=loss,
@@ -315,26 +372,29 @@ def cnn_model_fn(features, labels, mode):
 
 def main(unused_argv):
     ########################
-    train_data = np.asarray((train_positive_data + train_negative_data), dtype=np.float32)
-    train_data = np.asarray(train_data.reshape(TRAIN_80_POS + TRAIN_80_NEG, 16*512*2))
-    train_labels = np.asarray(train_label, dtype=np.int32)
+    train_data = np.asarray([t[0] for t in trainData], dtype=np.float32)
+    train_data = np.asarray(train_data.reshape(len(train_data), 16*512*2))
+    train_labels = np.asarray([t[1] for t in trainData], dtype=np.int32)
 
-    eval_data = np.asarray(eval_positive_data + eval_negative_data, dtype=np.float32) # Returns np.array
+    eval_data = np.asarray([t[0] for t in evalData], dtype=np.float32) # Returns np.array
     eval_data = np.asarray(eval_data.reshape(len(eval_data), 16*512*2))
-    eval_labels = np.asarray(eval_label, dtype=np.int32)
+    eval_labels = np.asarray([t[1] for t in evalData], dtype=np.int32)
 
     # Create the Estimator
     rfi_classifier = tf.estimator.Estimator(
     model_fn=cnn_model_fn,
-    model_dir="./tmp/22")
+    model_dir="./tmp/02")
 
     # Set up logging for predictions
     tensors_to_log = {"probabilities": "softmax_tensor"}
-    logging_hook = tf.train.LoggingTensorHook(
-      tensors=tensors_to_log,
-      every_n_iter=50)
 
-    #writer = tf.train.SummaryWriter(logs_path, graph=tf.get_default_graph())
+    # logging_hook = tf.train.LoggingTensorHook(
+    #   tensors=tensors_to_log,
+    #   every_n_iter=50)
+
+    eval_logging_hook = EvalLoggingTensorHook(
+      tensors=tensors_to_log,
+      every_n_iter=1)
 
     # Train the model
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
@@ -346,19 +406,42 @@ def main(unused_argv):
 
     rfi_classifier.train(
         input_fn=train_input_fn,
-        steps=20000,
-        hooks=[logging_hook])
+        steps=100000)
 
     # Evaluate the model and print results
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": eval_data},
         y=eval_labels,
+        batch_size = 16,
         num_epochs=1,
         shuffle=False)
 
-    eval_results = rfi_classifier.evaluate(input_fn=eval_input_fn)
+    eval_results = rfi_classifier.evaluate(
+      input_fn=eval_input_fn,
+      hooks=[eval_logging_hook])
 
-    print(eval_results)
+    numpy.savetxt("./eval_labels.csv", eval_labels.astype(np.int64), delimiter=",")
+    print("Saved" + str(eval_results))
+
+class EvalLoggingTensorHook(tf.train.LoggingTensorHook):
+  """A revised version of LoggingTensorHook to use during evaluation.
+  This version supports being reset and increments `_iter_count` before run
+  instead of after run.
+  """
+
+  def begin(self):
+    # Reset timer.
+    self._timer.update_last_triggered_step(0)
+    super(EvalLoggingTensorHook, self).begin()
+
+  def before_run(self, run_context):
+    self._iter_count += 1
+    return super(EvalLoggingTensorHook, self).before_run(run_context)
+
+  def after_run(self, run_context, run_values):
+    super(EvalLoggingTensorHook, self).after_run(run_context, run_values)
+    self._iter_count -= 1
+
 
 if __name__ == "__main__":
     tf.app.run()
