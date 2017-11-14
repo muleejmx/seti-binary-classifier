@@ -118,8 +118,8 @@ print("num of pairs: " + str(len(dataset)))
 def stack(dataON, dataOFF, typ):
   """ Takes in data (as outputted by fitsio read)
   and npstacks it. 
-  typ = + if same labels (based on ON)
-  typ = - if different labels """
+  typ = 1-10 if same labels (based on ON)
+  typ = 10-20 if different labels """
   allData.append([np.dstack((dataON, dataOFF)), typ])
 
 def training_data():
@@ -165,20 +165,17 @@ def training_data():
       on_label = label_dict[on]
       off_label = label_dict[off] 
 
-      if (on_label >= 8 and on_label <= 11) or (off_label >= 8 and off_label <= 11):
-        continue
-      elif on_label == 14 or off_label == 14:
+
+      if (on_label >= 8 and on_label <= 11) or (off_label >= 8 and off_label <= 11) or on_label == 14 or off_label == 14: # not enough samples
         continue
       else:
         if on_label ==  12 or on_label == 13:
           on_label -= 4
         if off_label == 12 or off_label == 13:
           off_label -= 4
-        on_label += 1
-        off_label += 1
 
       if (on_label != off_label):
-        typ = -1 * on_label
+        typ = 10+on_label
       else:
         typ = on_label
 
@@ -313,7 +310,7 @@ def cnn_model_fn(features, labels, mode):
       training=mode == tf.estimator.ModeKeys.TRAIN)
 
     # Logits Layer
-    logits = tf.layers.dense(inputs=dropout, units=22)
+    logits = tf.layers.dense(inputs=dropout, units=20)
 
     predictions = {
       # Generate predictions (for PREDICT and EVAL mode)
@@ -327,7 +324,7 @@ def cnn_model_fn(features, labels, mode):
       return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
     
     # Calculate Loss (for both TRAIN and EVAL modes)
-    onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=22)
+    onehot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=20)
     with tf.name_scope('loss'):
       unregularized_loss = tf.losses.softmax_cross_entropy(
         onehot_labels=onehot_labels, logits=logits)
@@ -383,7 +380,7 @@ def main(unused_argv):
     # Create the Estimator
     rfi_classifier = tf.estimator.Estimator(
     model_fn=cnn_model_fn,
-    model_dir="./tmp/02")
+    model_dir="./tmp/03")
 
     # Set up logging for predictions
     tensors_to_log = {"probabilities": "softmax_tensor"}
@@ -406,7 +403,7 @@ def main(unused_argv):
 
     rfi_classifier.train(
         input_fn=train_input_fn,
-        steps=100000)
+        steps=40000)
 
     # Evaluate the model and print results
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(

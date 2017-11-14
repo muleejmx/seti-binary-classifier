@@ -38,21 +38,25 @@ def randPlot(f, labels):
     i = 0
     for row in reader:
         if i == sample:
-            if row[0][0] != '-':
+            print(row)
+            if row[0][-1] == '0':
                 correct = int(row[0][0])
             else:
-                correct = int(row[0][:2])
+                correct = int(row[0][0]) * 10 + int(row[0][2])
             break
         else:
             i += 1
     print("row count: " + str(row_count))
     print("sample number: " + str(sample))
-    print("header: " +str(header))
+    print("header: " +str(len(header)))
     print("correct: " + str(correct))
+    print("vals: " + str(len(vals)))
+
 
     bars= plt.bar([int(h) for h in header[1:]], [float(v) for v in vals][1:])
-    bars[correct+11].set_color('r')
-    plt.xticks(np.arange(-11, 12))
+    plt.xticks(np.arange(0, 20))
+    bars[correct].set_color('r')
+    
     plt.title(sample)
     ax = plt.gca()
     ax.set_ylim([0, 1])
