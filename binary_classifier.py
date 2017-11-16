@@ -93,7 +93,6 @@ class Logger(object):
       self.writer.flush()
 
 
-
 tf.logging.set_verbosity(tf.logging.INFO)
 
 ext = '.fits'
@@ -115,12 +114,12 @@ print("num of pairs: " + str(len(dataset)))
 
 # Our application logic will be added here
 
-def stack(dataON, dataOFF, typ):
+def stack(dataON, dataOFF, typ, label):
   """ Takes in data (as outputted by fitsio read)
   and npstacks it. 
   typ = 1-10 if same labels (based on ON)
   typ = 10-20 if different labels """
-  allData.append([np.dstack((dataON, dataOFF)), typ])
+  allData.append([np.dstack((dataON, dataOFF)), typ, label])
 
 def training_data():
 
@@ -198,31 +197,31 @@ def training_data():
 
       # Add Data
 
-      stack(on_data, off_data, typ) # 1
-      stack(np.roll(on_data, roll_val[0]), np.roll(off_data, roll_val[0]), typ)
-      stack(np.roll(on_data, roll_val[1]), np.roll(off_data, roll_val[1]), typ)
-      stack(np.roll(on_data, roll_val[2]), np.roll(off_data, roll_val[2]), typ)
+      stack(on_data, off_data, typ, str(on)) # 1
+      stack(np.roll(on_data, roll_val[0]), np.roll(off_data, roll_val[0]), typ, str(on))
+      stack(np.roll(on_data, roll_val[1]), np.roll(off_data, roll_val[1]), typ, str(on))
+      stack(np.roll(on_data, roll_val[2]), np.roll(off_data, roll_val[2]), typ, str(on))
       #stack(np.roll(on_data, roll_val[3]), np.roll(off_data, roll_val[3]), typ)
       #stack(np.roll(on_data, roll_val[4]), np.roll(off_data, roll_val[4]), typ)
 
-      stack(on_flip_ud, off_flip_ud, typ) # 2
-      stack(np.roll(on_flip_ud, roll_val[5]), np.roll(off_flip_ud, roll_val[5]), typ)
-      stack(np.roll(on_flip_ud, roll_val[6]), np.roll(off_flip_ud, roll_val[6]), typ)
-      stack(np.roll(on_flip_ud, roll_val[7]), np.roll(off_flip_ud, roll_val[7]), typ)
+      stack(on_flip_ud, off_flip_ud, typ, str(on)) # 2
+      stack(np.roll(on_flip_ud, roll_val[5]), np.roll(off_flip_ud, roll_val[5]), typ, str(on))
+      stack(np.roll(on_flip_ud, roll_val[6]), np.roll(off_flip_ud, roll_val[6]), typ, str(on))
+      stack(np.roll(on_flip_ud, roll_val[7]), np.roll(off_flip_ud, roll_val[7]), typ, str(on))
       #stack(np.roll(on_flip_ud, roll_val[8]), np.roll(off_flip_ud, roll_val[8]), typ)
       #stack(np.roll(on_flip_ud, roll_val[9]), np.roll(off_flip_ud, roll_val[9]), typ)
 
-      stack(on_flip_lr, off_flip_lr, typ) # 3
-      stack(np.roll(on_flip_lr, roll_val[10]), np.roll(off_flip_lr, roll_val[10]), typ)
-      stack(np.roll(on_flip_lr, roll_val[11]), np.roll(off_flip_lr, roll_val[11]), typ)
-      stack(np.roll(on_flip_lr, roll_val[12]), np.roll(off_flip_lr, roll_val[12]), typ)
+      stack(on_flip_lr, off_flip_lr, typ, str(on)) # 3
+      stack(np.roll(on_flip_lr, roll_val[10]), np.roll(off_flip_lr, roll_val[10]), typ, str(on))
+      stack(np.roll(on_flip_lr, roll_val[11]), np.roll(off_flip_lr, roll_val[11]), typ, str(on))
+      stack(np.roll(on_flip_lr, roll_val[12]), np.roll(off_flip_lr, roll_val[12]), typ, str(on))
       #stack(np.roll(on_flip_lr, roll_val[13]), np.roll(off_flip_lr, roll_val[13]), typ)
       #stack(np.roll(on_flip_lr, roll_val[14]), np.roll(off_flip_lr, roll_val[14]), typ)
 
-      stack(on_db_flip, off_db_flip, typ) # 4
-      stack(np.roll(on_db_flip, roll_val[15]), np.roll(off_db_flip, roll_val[15]), typ)
-      stack(np.roll(on_db_flip, roll_val[16]), np.roll(off_db_flip, roll_val[16]), typ)
-      stack(np.roll(on_db_flip, roll_val[17]), np.roll(off_db_flip, roll_val[17]), typ)
+      stack(on_db_flip, off_db_flip, typ, str(on)) # 4
+      stack(np.roll(on_db_flip, roll_val[15]), np.roll(off_db_flip, roll_val[15]), typ, str(on))
+      stack(np.roll(on_db_flip, roll_val[16]), np.roll(off_db_flip, roll_val[16]), typ, str(on))
+      stack(np.roll(on_db_flip, roll_val[17]), np.roll(off_db_flip, roll_val[17]), typ, str(on))
       # stack(np.roll(on_db_flip, roll_val[18]), np.roll(off_db_flip, roll_val[18]), typ)
       # stack(np.roll(on_db_flip, roll_val[19]), np.roll(off_db_flip, roll_val[19]), typ)
 
@@ -337,7 +336,7 @@ def cnn_model_fn(features, labels, mode):
       with tf.name_scope('train_op'):
         global_step = tf.Variable(0, trainable=False)
 
-	starter_learning_rate = 0.0001
+	starter_learning_rate = 0.0005
 	k = 0.5
 	
 	learning_rate = tf.train.natural_exp_decay(starter_learning_rate, global_step, 10000, k)
@@ -377,10 +376,12 @@ def main(unused_argv):
     eval_data = np.asarray(eval_data.reshape(len(eval_data), 16*512*2))
     eval_labels = np.asarray([t[1] for t in evalData], dtype=np.int32)
 
+    eval_names = np.asarray([t[2] for t in evalData])
+
     # Create the Estimator
     rfi_classifier = tf.estimator.Estimator(
     model_fn=cnn_model_fn,
-    model_dir="./tmp/03")
+    model_dir="./tmp/05")
 
     # Set up logging for predictions
     tensors_to_log = {"probabilities": "softmax_tensor"}
@@ -397,7 +398,7 @@ def main(unused_argv):
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": train_data},
         y=train_labels,
-        batch_size=16,
+        batch_size=32,
         num_epochs=None,
         shuffle=True)
 
@@ -409,8 +410,8 @@ def main(unused_argv):
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": eval_data},
         y=eval_labels,
-        batch_size = 16,
         num_epochs=1,
+	batch_size=32,
         shuffle=False)
 
     eval_results = rfi_classifier.evaluate(
@@ -418,7 +419,9 @@ def main(unused_argv):
       hooks=[eval_logging_hook])
 
     numpy.savetxt("./eval_labels.csv", eval_labels.astype(np.int64), delimiter=",")
+   # numpy.savetxt("./eval_names.csv", eval_names, delimiter=",")
     print("Saved" + str(eval_results))
+    #print("Saved" + str(eval_names))
 
 class EvalLoggingTensorHook(tf.train.LoggingTensorHook):
   """A revised version of LoggingTensorHook to use during evaluation.

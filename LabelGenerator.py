@@ -42,10 +42,10 @@ for on in dataset:
     plt.subplot(211)
     plt.suptitle(on,fontsize='8')
     plt.title('label= '+str(label_dict[on])+' '+dict_map[label_dict[on]],fontsize='8')
-    plt.imshow(on_data)
+    plt.imshow(on_data,aspect='auto')
     plt.subplot(212)
     plt.title('label= '+str(label_dict[off])+' '+dict_map[label_dict[off]],fontsize='8')
-    plt.imshow(off_data)
+    plt.imshow(off_data, aspect='auto')
     
     plt.subplots_adjust(bottom=0.05, right=0.8, top=0.9)
 
