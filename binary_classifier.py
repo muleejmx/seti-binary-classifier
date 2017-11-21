@@ -318,7 +318,8 @@ def cnn_model_fn(features, labels, mode):
       # `logging_hook`.
       "probabilities": tf.nn.softmax(logits, name="softmax_tensor")
     }
-
+    
+    tf.summary.histogram('probabilities', predictions['probabilities'])  
     if mode == tf.estimator.ModeKeys.PREDICT:
       return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
     
@@ -336,7 +337,7 @@ def cnn_model_fn(features, labels, mode):
       with tf.name_scope('train_op'):
         global_step = tf.Variable(0, trainable=False)
 
-	starter_learning_rate = 0.0005
+	starter_learning_rate = 0.0008
 	k = 0.5
 	
 	learning_rate = tf.train.natural_exp_decay(starter_learning_rate, global_step, 10000, k)
@@ -381,7 +382,7 @@ def main(unused_argv):
     # Create the Estimator
     rfi_classifier = tf.estimator.Estimator(
     model_fn=cnn_model_fn,
-    model_dir="./tmp/05")
+    model_dir="./tmp/08")
 
     # Set up logging for predictions
     tensors_to_log = {"probabilities": "softmax_tensor"}
@@ -398,22 +399,22 @@ def main(unused_argv):
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": train_data},
         y=train_labels,
-        batch_size=32,
+        batch_size=16,
         num_epochs=None,
         shuffle=True)
 
     rfi_classifier.train(
         input_fn=train_input_fn,
-        steps=40000)
+        steps=100000)
 
     # Evaluate the model and print results
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": eval_data},
         y=eval_labels,
         num_epochs=1,
-	batch_size=32,
+	batch_size=16,
         shuffle=False)
-
+	
     eval_results = rfi_classifier.evaluate(
       input_fn=eval_input_fn,
       hooks=[eval_logging_hook])
